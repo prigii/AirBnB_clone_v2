@@ -1,27 +1,71 @@
 #!/usr/bin/python3
-"""Deploy archive!"""
-from fabric.api import env, put, run
+"""
+Deploy archive!
+"""
+from fabric.api import local, env, put, run
+from datetime import datetime
 import os
 
-env.hosts = ['<IP web-01>', '<IP web-02>']
-env.user = '<username>'
-env.key_filename = '/path/to/your/private/key'
+env.hosts = ['3.85.148.155', '100.25.22.138']
+env.user = 'ubuntu'
+env.key_filename = '~/.ssh/id_rsa'
+
+
+def do_pack():
+    """
+    generates .tgz archive
+    """
+    try:
+        local("mkdir -p versions")
+
+        now = datetime.now().strftime("%Y%m%d%H%M%S")
+        name = "web_static_{}.tgz".format(now)
+
+        local(f"tar -cvzf versions/{name} web_static/")
+
+        return f"versions/{name}"
+    except Exception:
+        return None
 
 
 def do_deploy(archive_path):
+    """
+    distributes archive to web server
+    """
     if not os.path.exists(archive_path):
         return False
 
-    file_name = archive_path.split('/')[-1]
-    folder_name = file_name.split('.')[0]
+    try:
+        # fname = os.path.basename(archive_path)
+        fname = archive_path.split("/")[-1]
+        # name = fname.replace('.tgz', '')
+        name = fname.split(".")[0]
+        path = f"/data/web_static/releases/{name}/"
 
-    put(archive_path, '/tmp/')
-    run('mkdir -p /data/web_static/releases/{}/'.format(folder_name))
-    run('tar -xzf /tmp/{} -C /data/web_static/releases/{}/'.format(file_name, folder_name))
-    run('rm /tmp/{}'.format(file_name))
-    run('mv /data/web_static/releases/{}/web_static/* /data/web_static/releases/{}/'.format(folder_name, folder_name))
-    run('rm -rf /data/web_static/releases/{}/web_static'.format(folder_name))
-    run('rm -rf /data/web_static/current')
-    run('ln -s /data/web_static/releases/{}/ /data/web_static/current'.format(folder_name))
+        # load archive to server
+        put(archive_path, '/tmp/')
 
-    return True
+        # create new path without .tgz extension
+        run(f"mkdir -p {path}")
+
+        # extract archive content to the new path
+        run(f"tar -xzf /tmp/{fname} -C {path}")
+
+        # remove archive
+        run(f"rm /tmp/{fname}")
+
+        # move files to correct location
+        run(f"mv {path}web_static/* {path}")
+
+        # remove web_static folder
+        run(f"rm -rf {path}web_static")
+
+        # remove symbolic link current
+        run('rm -rf /data/web_static/current')
+
+        # update symbolic link
+        run(f"ln -s {path} /data/web_static/current")
+
+        return True
+    except Exception:
+        return False
