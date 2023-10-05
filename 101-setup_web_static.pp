@@ -1,29 +1,88 @@
-#!/usr/bin/env bash
-# Bash script using puppet that sets up your web servers
-# for the deployment of web_static:
-# Install Nginx if it not already installed
-if ! command -v nginx &> /dev/null
-then
-    sudo apt-get update
-    sudo apt-get install nginx -y
-fi
+# Configures a web server for deployment of web_static.
 
-# Create the necessary directories if they don't exist
-sudo mkdir -p /data/web_static/releases/test/
-sudo mkdir -p /data/web_static/shared/
-sudo touch /data/web_static/releases/test/index.html
+# Nginx configuration file
+$nginx_conf = "server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    add_header X-Served-By ${hostname};
+    root   /var/www/html;
+    index  index.html index.htm;
+    location /hbnb_static {
+	alias /data/web_static/current;
+	index index.html index.htm;
+    }
+    location /redirect_me {
+    	return 301 http://cuberule.com/;
+    }
+    error_page 404 /404.html;
+    location /404 {
+      root /var/www/html;
+      internal;
+    }
+}"
 
-# Create a fake HTML file /data/web_static/releases/test/index.html (with simple content, to test your Nginx configuration)
-echo "Hello, World!" | sudo tee /data/web_static/releases/test/index.html
+package { 'nginx':
+  ensure   => 'present',
+  provider => 'apt'
+} ->
 
-# Create a symbolic link /data/web_static/current linked to the /data/web_static/releases/test/ folder. If the symbolic link already exists, it should be deleted and recreated every time the script is ran.
-sudo rm -rf /data/web_static/current
-sudo ln -s /data/web_static/releases/test/ /data/web_static/current
+file { '/data':
+  ensure  => 'directory'
+} ->
 
-# Give ownership of the /data/ folder to the ubuntu user AND group (you can assume this user and group exist). This should be recursive; everything inside should be created/owned by this user/group.
-sudo chown -R ubuntu:ubuntu /data/
+file { '/data/web_static':
+  ensure => 'directory'
+} ->
 
-# Update the Nginx configuration to serve the content of /data/web_static/current/ to hbnb_static (ex: https://mydomainname.tech/hbnb_static). Don’t forget to restart Nginx after updating the configuration:
-# Use alias inside your Nginx configuration
-sudo sed -i '/listen 80 default_server;/a \\n\tlocation /hbnb_static {\n\t\talias /data/web_static/current/;\n\t}\n' /etc/nginx/sites-available/default
-sudo service nginx restart
+file { '/data/web_static/releases':
+  ensure => 'directory'
+} ->
+
+file { '/data/web_static/releases/test':
+  ensure => 'directory'
+} ->
+
+file { '/data/web_static/shared':
+ensure => 'directory'
+  } ->
+
+file { '/data/web_static/releases/test/index.html':
+  ensure  => 'present',
+  content => "Holberton School Puppet\n"
+} ->
+
+file { '/data/web_static/current':
+  ensure => 'link',
+  target => '/data/web_static/releases/test'
+} ->
+
+exec { 'chown -R ubuntu:ubuntu /data/':
+  path => '/usr/bin/:/usr/local/bin/:/bin/'
+}
+
+file { '/var/www':
+  ensure => 'directory'
+} ->
+
+file { '/var/www/html':
+  ensure => 'directory'
+} ->
+
+file { '/var/www/html/index.html':
+  ensure  => 'present',
+  content => "Holberton School Nginx\n"
+} ->
+
+file { '/var/www/html/404.html':
+  ensure  => 'present',
+  content => "Ceci n'est pas une page\n"
+} ->
+
+file { '/etc/nginx/sites-available/default':
+  ensure  => 'present',
+  content => $nginx_conf
+} ->
+
+exec { 'nginx restart':
+  path => '/etc/init.d/'
+}
